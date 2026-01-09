@@ -1,0 +1,59 @@
+name: My node
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-node-tunnel:
+    runs-on: windows-2022
+    timeout-minutes: 360
+
+    steps:
+    - name: Check out the repository
+      uses: actions/checkout@v2
+
+    - name: Download and Install Playit
+      run: |
+        $playitPath = "$env:USERPROFILE\playit.exe"
+        $playitURL = "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe"
+        
+        Invoke-WebRequest -Uri $playitURL -OutFile $playitPath
+        
+        if (-Not (Test-Path $playitPath)) {
+            Write-Error "Playit gagal diunduh!"
+            exit 1
+        }
+        
+    - name: Enable TS dengan UDP Support
+      run: |
+        # Enable RDP
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        
+        # Enable UDP Transport for RDP
+        New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name 'SelectTransport' -Value 1 -PropertyType DWord -Force
+        
+        # Prioritize UDP over TCP
+        New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name 'SelectTransport' -Value 2 -PropertyType DWord -Force
+        
+        # Allow both TCP and UDP
+        New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name 'SelectTransport' -Value 3 -PropertyType DWord -Force
+        
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+
+    - name: Start Playit and Set Up My node
+      env:
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
+      run: |
+        $playitPath = "$env:USERPROFILE\playit.exe"
+        
+        # Jalankan Playit dengan auth key
+        Try {
+            Start-Process -FilePath $playitPath -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
+            Start-Process -FilePath $playitPath -NoNewWindow
+            Write-Output "Playit berhasil dijalankan."
+        } Catch {
+            Write-Error "Gagal menjalankan Playit: $_"
+            exit 1
+        }
